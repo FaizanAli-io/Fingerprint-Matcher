@@ -1,0 +1,9 @@
+numpy 
+rembg 
+Flask
+Pillow 
+SQLAlchemy
+onnxruntime
+scikit-learn
+opencv-python 
+psycopg2-binary
