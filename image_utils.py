@@ -8,7 +8,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine, Column, Integer, Text, Float
 
-# --- SQLAlchemy Setup ---
 DB_URL = "postgresql://neondb_owner:npg_iSgrV0csFlw2@ep-shrill-frog-a47kkrww-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
 engine = create_engine(DB_URL)
 Session = sessionmaker(bind=engine)
@@ -25,7 +24,6 @@ class SiftFeature(Base):
 Base.metadata.create_all(engine)
 
 
-# --- Image Processing Functions ---
 def enhance_contrast(img):
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     l, a, b = cv2.split(lab)
@@ -52,7 +50,7 @@ def remove_background(img):
     x, y, w, h = cv2.boundingRect(coords)
     cropped = result_cv[y : y + h // 2, x : x + w]
     resized = cv2.resize(cropped, (256, 256))
-    return enhance_contrast(resized)
+    return enhance_contrast(result_cv)
 
 
 def extract_sift_descriptors(img):
@@ -62,7 +60,6 @@ def extract_sift_descriptors(img):
     return descriptors
 
 
-# --- DB Functions ---
 def insert_descriptors_to_db(descriptors, name):
     if descriptors is None:
         return
@@ -82,13 +79,21 @@ def find_best_matches(descriptors, top_k=5):
     if descriptors is None:
         return []
 
-    flat = descriptors.flatten().reshape(1, -1)
+    bf = cv2.BFMatcher()
+    results = []
+
     with Session() as session:
         all_entries = session.query(SiftFeature).all()
-        scores = []
         for entry in all_entries:
-            stored = np.array(entry.descriptor).reshape(1, -1)
-            min_len = min(flat.shape[1], stored.shape[1])
-            sim = cosine_similarity(flat[:, :min_len], stored[:, :min_len])[0][0]
-            scores.append((entry.name, sim))
-        return sorted(scores, key=lambda x: -x[1])[:top_k]
+            stored = np.array(entry.descriptor, dtype=np.float32).reshape(-1, 128)
+            matches = bf.knnMatch(descriptors, stored, k=2)
+
+            good_matches = []
+            for m, n in matches:
+                if m.distance < 0.5 * n.distance:
+                    good_matches.append(m)
+
+            results.append((entry.name, len(good_matches)))
+
+    results.sort(key=lambda x: -x[1])
+    return results[:top_k]

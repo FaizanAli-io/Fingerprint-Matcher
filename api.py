@@ -1,9 +1,10 @@
+import os
 import cv2
 import numpy as np
+from datetime import datetime
 from flask import Flask, request, jsonify
 from image_utils import (
     remove_background,
-    extract_sift_descriptors,
     insert_descriptors_to_db,
     get_all_feature_names,
     find_best_matches,
@@ -27,13 +28,36 @@ def upload_image():
     if img is None:
         return jsonify({"error": "Could not decode image"}), 400
 
+    os.makedirs("inputs", exist_ok=True)
+    os.makedirs("processed", exist_ok=True)
+
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    input_filename = f"{name}_{timestamp}.jpg"
+    input_path = os.path.join("inputs", input_filename)
+
+    cv2.imwrite(input_path, img)
+
     processed = remove_background(img)
-    descriptors = extract_sift_descriptors(processed)
+    gray = cv2.cvtColor(processed, cv2.COLOR_BGR2GRAY)
+    sift = cv2.SIFT_create()
+    keypoints, descriptors = sift.detectAndCompute(gray, None)
+
     if descriptors is not None:
         insert_descriptors_to_db(descriptors, name)
-        return jsonify({"status": "success"}), 200
-    return jsonify({"error": "No SIFT features found"}), 422
 
+        output_img = cv2.drawKeypoints(processed, keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
+        processed_filename = f"{name}_processed_{timestamp}.jpg"
+        processed_path = os.path.join("processed", processed_filename)
+        cv2.imwrite(processed_path, output_img)
+
+        return jsonify({
+            "status": "success",
+            "input_image": input_filename,
+            "processed_image": processed_filename
+        }), 200
+
+    return jsonify({"error": "No SIFT features found"}), 422
 
 @app.route("/list", methods=["GET"])
 def list_images():
@@ -54,13 +78,41 @@ def match_image():
     if img is None:
         return jsonify({"error": "Could not decode image"}), 400
 
-    processed = remove_background(img)
-    descriptors = extract_sift_descriptors(processed)
-    matches = find_best_matches(descriptors)
+    os.makedirs("test", exist_ok=True)
 
-    return jsonify(
-        {"matches": [{"name": name, "similarity": float(sim)} for name, sim in matches]}
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    input_filename = f"input_{timestamp}.jpg"
+    processed_filename = f"sift_{timestamp}.jpg"
+    input_path = os.path.join("test", input_filename)
+    processed_path = os.path.join("test", processed_filename)
+
+    cv2.imwrite(input_path, img)
+
+    processed = remove_background(img)
+
+    gray = cv2.cvtColor(processed, cv2.COLOR_BGR2GRAY)
+    sift = cv2.SIFT_create()
+    keypoints, descriptors = sift.detectAndCompute(gray, None)
+
+    if descriptors is None:
+        return jsonify({"error": "No SIFT features found"}), 422
+
+    output_img = cv2.drawKeypoints(
+        processed, keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS
     )
+    cv2.imwrite(processed_path, output_img)
+
+    matches = find_best_matches(descriptors)
+    
+    print(f"Matches: {matches}")
+    
+    return jsonify({
+        "matches": [{"name": name, "similarity": float(sim)} for name, sim in matches],
+        "saved": {
+            "input_image": input_filename,
+            "sift_visualization": processed_filename
+        }
+    })
 
 
 @app.route("/delete/<int:id>", methods=["DELETE"])
@@ -71,8 +123,8 @@ def delete_image(id):
             return jsonify({"error": "Image not found"}), 404
         session.delete(image)
         session.commit()
-    return jsonify({"message": f"Image with ID {id} deleted"}), 200
+    return jsonify({"message": f"Image with ID {id} deleted"}), 204
 
 
 if __name__ == "__main__":
-    app.run(port=8080)
+    app.run(host="0.0.0.0", port=8080)

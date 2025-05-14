@@ -4,7 +4,7 @@ BASE_URL = "http://localhost:8080"
 
 
 def test_upload(filename):
-    with open(f"data/{filename}.jpg", "rb") as f:
+    with open(f"data/{filename}.jpeg", "rb") as f:
         response = requests.post(
             f"{BASE_URL}/upload",
             files={"file": f},
@@ -19,7 +19,7 @@ def test_list():
 
 
 def test_match(filename):
-    with open(f"data/{filename}.jpg", "rb") as f:
+    with open(f"demo/{filename}.jpeg", "rb") as f:
         response = requests.post(
             f"{BASE_URL}/match",
             files={"file": f},
@@ -33,15 +33,19 @@ def test_delete(id_to_delete):
 
 
 image_files = [
-    "jafar-1",
+    "faizan-1",
+    "faizan-2",
+    "faizan-3",
     "mehdi-1",
     "mehdi-2",
     "mehdi-3",
-    "mehdi-4",
 ]
 
 if __name__ == "__main__":
-    filename = image_files[0]
+    # [test_delete(i) for i in range(14, 17)]
+    # for filename in image_files:
+    #     test_upload(filename)
     # test_upload(filename)
-    # test_match(filename)
+    filename = "ali"
+    test_match(filename)
     # test_list()
